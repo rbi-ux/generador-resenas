@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Generador de reseñas</title>
+<style>
+:root{
+  --bg:#f6f5f2; --card:#ffffff; --ink:#1d1d1b; --muted:#6b6a66; --line:#e4e2dc;
+  --accent:#2f6b4f; --accent-ink:#ffffff; --star:#e0a100; --chip:#efeee9;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --card:#21211e; --ink:#ecebe6; --muted:#a19f98; --line:#34332f;
+    --accent:#6fbf94; --accent-ink:#0f1a14; --star:#f2b821; --chip:#2b2a27;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:24px 16px 60px}
+h1{font-size:22px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 20px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+input,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.full{grid-column:1/-1}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:8px 14px;cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.stats{color:var(--muted);font-size:13px;margin-bottom:10px}
+.list{display:grid;gap:12px}
+.rev{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.head{display:flex;align-items:center;gap:10px}
+.av{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:600;flex:none}
+.name{font-weight:600}
+.meta{color:var(--muted);font-size:12px}
+.stars{color:var(--star);letter-spacing:1px;margin:6px 0 4px}
+.stars .off{color:var(--line)}
+.txt{white-space:pre-wrap;word-wrap:break-word}
+.foot{margin-top:28px;color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Generador de reseñas</h1>
+  <p class="sub">Reseñas ficticias con lenguaje natural para rellenar demos y maquetas.</p>
+
+  <div class="panel">
+    <label>Nombre del negocio
+      <input id="nombre" value="Casa Lola">
+    </label>
+    <label>Tipo de negocio
+      <select id="tipo"></select>
+    </label>
+    <label>Cantidad
+      <input id="cantidad" type="number" min="1" max="200" value="12">
+    </label>
+    <label>Estrellas
+      <select id="estrellas">
+        <option value="mix">Mezcla realista</option>
+        <option value="buenas">Casi todas buenas (4-5)</option>
+        <option value="malas">Casi todas malas (1-2)</option>
+        <option value="5">Solo 5</option><option value="4">Solo 4</option>
+        <option value="3">Solo 3</option><option value="2">Solo 2</option><option value="1">Solo 1</option>
+      </select>
+    </label>
+    <label>Largo
+      <select id="largo">
+        <option value="mix">Variado</option>
+        <option value="corta">Cortas</option>
+        <option value="media">Medias</option>
+        <option value="larga">Largas</option>
+      </select>
+    </label>
+    <label>Cómo escriben
+      <select id="estilo">
+        <option value="1">Normal (algún fallo suelto)</option>
+        <option value="0">Cuidado (bien escrito)</option>
+        <option value="2">Desde el móvil (q, xq, sin tildes...)</option>
+      </select>
+    </label>
+    <label class="full">Cosas concretas a mencionar (opcional, separadas por comas)
+      <input id="extras" placeholder="ej: el arroz negro, la terraza, el parking">
+    </label>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="gen">Generar</button>
+    <button id="copiar">Copiar texto</button>
+    <button id="json">Descargar JSON</button>
+    <button id="csv">Descargar CSV</button>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="list" id="list"></div>
+  <p class="foot">Contenido ficticio generado en tu navegador. Solo para demos internas, no para publicar.</p>
+</div>
+
+<script>
+// ---------- utilidades ----------
+const R = a => a[Math.floor(Math.random() * a.length)];
+const chance = p => Math.random() < p;
+const rint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = rint(0, i); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+// ---------- datos por tipo de negocio ----------
+const NEGOCIOS = {
+  restaurante: {
+    label: "Restaurante / bar",
+    items: ["el arroz", "las croquetas", "el pulpo", "el menú del día", "las bravas", "el solomillo", "la tarta de queso", "el tartar", "los postres caseros", "el vermut"],
+    staff: ["Luis", "Marta", "Toni", "Carla", "Jorge", "Ana"],
+    pos: ["{item}, espectacular", "{item}, de lo mejor que he probado en mucho tiempo", "todo buenísimo, sobre todo {item}", "raciones generosas y muy bien hechas", "se nota que el producto es bueno", "pedimos {item} para compartir y acabamos repitiendo"],
+    neg: ["con {item} un desastre, llegó todo frío", "{item}, salado a más no poder", "raciones muy justas para lo que cuestan", "{item}, sin sabor ninguno", "nos trajeron un plato que no habíamos pedido"],
+    mid: ["{item} bien, sin más", "la comida correcta pero nada del otro mundo", "{item} bien, aunque esperaba algo más"],
+    lugar: ["el local es muy acogedor", "la terraza es una maravilla", "había bastante ruido", "las mesas muy pegadas unas a otras"],
+    emoji: ["😋", "🤤", "🍷"]
+  },
+  peluqueria: {
+    label: "Peluquería / estética",
+    items: ["el corte", "las mechas", "el tinte", "el alisado", "la manicura", "el arreglo de barba", "el lavado con masaje"],
+    staff: ["Sonia", "Dani", "Bea", "Raúl", "Nuria"],
+    pos: ["me dejaron {item} justo como quería", "{item} de diez, ya me han felicitado varias personas", "te escuchan de verdad antes de empezar", "el resultado de {item} me ha durado un montón"],
+    neg: ["lo de {item} no se parecía en nada a lo que pedí", "el resultado de {item}, desigual", "me tuvieron esperando casi una hora con cita", "salí con el pelo más estropeado de lo que entré"],
+    mid: ["{item} bien, aunque no me convenció del todo", "correcto, sin más"],
+    lugar: ["el salón está muy limpio y cuidado", "la música muy alta para mi gusto"],
+    emoji: ["💇‍♀️", "✨", "💅"]
+  },
+  dentista: {
+    label: "Clínica dental / salud",
+    items: ["la limpieza", "el empaste", "la ortodoncia", "el blanqueamiento", "la revisión", "el implante"],
+    staff: ["la doctora García", "el doctor Ruiz", "Laura", "Pilar"],
+    pos: ["{item} sin nada de dolor", "me explicaron todo antes de empezar y eso se agradece", "tenía bastante miedo y me tranquilizaron mucho", "{item} genial y el seguimiento después también"],
+    neg: ["me intentaron vender tratamientos que no necesitaba", "{item} me salió bastante más caro de lo que me dijeron", "cambiaron la cita tres veces", "no me explicaron nada, entrar y salir"],
+    mid: ["{item} bien, aunque la espera fue larga", "trato correcto pero muy frío"],
+    lugar: ["la clínica es nueva y muy limpia", "la sala de espera siempre llena"],
+    emoji: ["🦷", "😁"]
+  },
+  taller: {
+    label: "Taller mecánico",
+    items: ["el cambio de aceite", "la revisión", "los frenos", "el cambio de ruedas", "la ITV", "el aire acondicionado"],
+    staff: ["Paco", "Manolo", "Iván", "Sergio"],
+    pos: ["me hicieron {item} el mismo día", "honrados, me dijeron que no hacía falta cambiar nada más", "{item}, rápido y a buen precio", "te enseñan la pieza vieja, eso da confianza"],
+    neg: ["me cobraron cosas que no había autorizado", "con {item} tardaron una semana cuando me dijeron dos días", "a los dos días el problema seguía igual", "no cogen el teléfono nunca"],
+    mid: ["{item} bien, aunque un poco caro", "cumplieron pero tardaron más de lo dicho"],
+    lugar: ["el taller está muy ordenado", "cuesta aparcar por la zona"],
+    emoji: ["🚗", "🔧"]
+  },
+  hotel: {
+    label: "Hotel / alojamiento",
+    items: ["la habitación", "el desayuno", "la piscina", "la cama", "las vistas", "el spa"],
+    staff: ["el chico de recepción", "Elena", "Marcos", "la gente de recepción"],
+    pos: ["{item} impecable", "{item} mejor de lo que se ve en las fotos", "el desayuno muy completo, con producto local", "nos dejaron hacer el check-out más tarde sin problema"],
+    neg: ["{item}, nada que ver con las fotos", "se oía todo de la habitación de al lado", "{item}, sin limpiar cuando llegamos", "el wifi no funcionó en todo el fin de semana"],
+    mid: ["{item}, lo justo para el precio", "bien para una noche, para más no sé"],
+    lugar: ["la ubicación es perfecta, todo a mano", "está un poco apartado del centro"],
+    emoji: ["🏨", "🌴"]
+  },
+  tienda: {
+    label: "Tienda / ecommerce",
+    items: ["el pedido", "la chaqueta", "las zapatillas", "el regalo", "la devolución", "el envío"],
+    staff: ["la chica que me atendió", "el dependiente", "atención al cliente"],
+    pos: ["me llegó en dos días, todo bien empaquetado", "la calidad mejor de lo que esperaba", "me ayudaron a elegir talla y acertaron", "{item} tal cual la foto"],
+    neg: ["{item}, con un golpe nada más abrir la caja", "llevo dos semanas esperando {item}", "la talla no corresponde para nada", "con {item} un infierno, no hay manera de que contesten"],
+    mid: ["{item} bien, pero el envío tardó más de lo que ponía", "calidad aceptable para el precio"],
+    lugar: ["la tienda es bonita y está bien organizada", "la web es un poco liosa"],
+    emoji: ["🛍️", "📦"]
+  },
+  gimnasio: {
+    label: "Gimnasio",
+    items: ["las clases de spinning", "la sala de musculación", "los vestuarios", "las clases dirigidas", "el entrenador personal"],
+    staff: ["Álex", "Cris", "el monitor de la mañana", "Patri"],
+    pos: ["{item}, de lo mejor", "hay buen rollo y nadie te mira raro", "todo siempre limpio, sobre todo {item}", "los monitores te corrigen la técnica sin que se lo pidas"],
+    neg: ["imposible reservar {item}, todo lleno siempre", "las máquinas rotas semanas y semanas", "para darte de baja te ponen mil pegas", "{item}, un asco"],
+    mid: ["{item} bien, aunque a última hora se llena", "cumple, sin más"],
+    lugar: ["las instalaciones son nuevas", "el parking es un problema"],
+    emoji: ["💪", "🏋️"]
+  },
+  generico: {
+    label: "Genérico / servicios",
+    items: ["el servicio", "el presupuesto", "el trabajo", "la atención"],
+    staff: ["el chico que me atendió", "la chica de la entrada", "el responsable", "Carlos", "Irene"],
+    pos: ["{item} impecable", "cumplieron plazos, cosa rara hoy en día", "{item} muy profesional de principio a fin", "resolvieron todas mis dudas"],
+    neg: ["{item} muy por debajo de lo prometido", "nadie se hace responsable de nada", "me dieron largas durante semanas", "{item} un desastre"],
+    mid: ["{item} correcto", "bien en general aunque hay cosas que mejorar"],
+    lugar: ["el sitio está bien ubicado", "cuesta un poco encontrarlo"],
+    emoji: ["👍"]
+  }
+};
+
+// ---------- frases comunes ----------
+const COMUN = {
+  servicioPos: ["{staff} nos atendió genial, un encanto", "el trato de diez", "muy amables desde que entras", "{staff} súper atento en todo momento", "te hacen sentir como en casa"],
+  servicioNeg: ["el trato bastante borde", "{staff} con cara de pocos amigos todo el rato", "nadie nos hacía caso", "pedí hablar con el encargado y ni apareció"],
+  precioPos: ["calidad-precio de lo mejor de la zona", "precio muy razonable", "no es barato pero lo vale"],
+  precioNeg: ["carísimo para lo que es", "la cuenta final no tenía nada que ver con lo que nos dijeron", "precios de risa"],
+  esperaNeg: ["esperamos muchísimo", "tardaron una eternidad", "llegamos a la hora y aun así nos tocó esperar"],
+  esperaPos: ["súper rápidos", "sin esperas", "todo muy ágil"],
+  aperturaPos: ["Fuimos el sábado por recomendación de una amiga y repetiremos seguro.", "Primera vez que venía y me ha encantado.", "Llevo años viniendo y nunca falla.", "Qué descubrimiento.", "Vine con pocas expectativas y me sorprendió muchísimo.", "Lo encontré de casualidad buscando por la zona.", "Mi pareja y yo ya somos fijos."],
+  aperturaMid: ["Bueno, a ver.", "Experiencia regulera.", "Ni fu ni fa.", "Fuimos el viernes.", "Tenía buenas referencias."],
+  aperturaNeg: ["No suelo escribir reseñas pero esta vez lo tengo que hacer.", "Qué decepción.", "Fuimos con muchas ganas y salimos fatal.", "Nada que ver con lo que era antes.", "Lamentable."],
+  cierrePos: ["Volveremos seguro!", "100% recomendable", "Gracias por todo!", "Lo recomiendo sin dudarlo.", "Ya tengo ganas de volver", "Seguid así!", "Un acierto."],
+  cierreMid: ["Igual le doy otra oportunidad.", "Para salir del paso está bien.", "Mejorable.", "Ya veremos si vuelvo."],
+  cierreNeg: ["No volveré.", "Una pena, porque el sitio tenía buena pinta.", "Ojalá lean esto y mejoren.", "No lo recomiendo.", "Ahí os quedáis."],
+  peroMenor: ["le quito una estrella porque {neg}", "lo único, que {neg}", "como pega, {neg}"],
+  aunqueBueno: ["lo único bueno, que {pos}", "eso sí, {pos}", "salvo que {pos}, poco más"],
+  breves: { 5: ["Todo perfecto", "De 10", "Muy recomendable", "Genial!!", "Repetiremos", "Top"], 4: ["Muy bien en general", "Bien, repetiría", "Recomendable"], 3: ["Normalito", "Correcto", "Sin más"], 2: ["Flojito", "No me convenció"], 1: ["Fatal", "Nunca más", "Horrible"] },
+  emojiPos: ["😍", "👌", "👏", "🙌", "❤️", "😊"],
+  emojiNeg: ["😡", "👎", "🙄", "😤"]
+};
+
+const NOMBRES = ["María", "Laura", "Carmen", "Lucía", "Marta", "Ana", "Cristina", "Paula", "Elena", "Sara", "Núria", "Mari Carmen", "Rocío", "Montse", "Javier", "David", "Carlos", "Jordi", "Sergio", "Pablo", "Álvaro", "Manuel", "Antonio", "Pedro", "Rubén", "Iker", "Xavi", "Marc", "Fernando", "José Luis"];
+const APELLIDOS = ["García", "Martínez", "López", "Sánchez", "Pérez", "Gómez", "Fernández", "Ruiz", "Díaz", "Moreno", "Muñoz", "Romero", "Navarro", "Torres", "Puig", "Ferrer", "Vidal", "Castro", "Ortega", "Rubio"];
+const COLORES = ["#c2553d", "#3d7cc2", "#4f9a5e", "#8a5cc2", "#c28a3d", "#3da6a6", "#b8457d", "#5a6b7d"];
+
+// ---------- generación ----------
+function fill(t, ctx) {
+  return t.replace(/\{item\}/g, () => R(ctx.items)).replace(/\{staff\}/g, () => R(ctx.staff))
+          .replace(/\{n\}/g, ctx.nombre).replace(/\{pos\}/g, () => fill(R(ctx.pos), ctx)).replace(/\{neg\}/g, () => fill(R(ctx.neg), ctx));
+}
+
+function estrellas(modo) {
+  if (/^\d$/.test(modo)) return +modo;
+  const pesos = modo === "buenas" ? [0, 2, 3, 10, 35, 50] : modo === "malas" ? [0, 55, 30, 10, 4, 1] : [0, 9, 5, 9, 22, 55];
+  let x = Math.random() * 100;
+  for (let s = 1; s <= 5; s++) { x -= pesos[s]; if (x <= 0) return s; }
+  return 5;
+}
+
+function autor() {
+  const n = R(NOMBRES), a = R(APELLIDOS);
+  const forma = rint(0, 9);
+  if (forma < 4) return `${n} ${a}`;
+  if (forma < 7) return `${n} ${a.charAt(0)}.`;
+  if (forma < 8) return n;
+  if (forma < 9) return `${n} ${a} ${R(APELLIDOS)}`;
+  return (n.split(" ")[0] + R(["_", ".", ""]) + R([a.toLowerCase(), "bcn", "mad", rint(70, 99)])).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+function fecha() {
+  const r = rint(0, 9);
+  if (r < 2) return `hace ${rint(2, 6)} días`;
+  if (r < 4) return R(["hace una semana", `hace ${rint(2, 3)} semanas`]);
+  if (r < 7) return R(["hace un mes", `hace ${rint(2, 11)} meses`]);
+  return R(["hace un año", `hace ${rint(2, 4)} años`]);
+}
+
+function frases(s, ctx, largo) {
+  const n = { corta: 1, media: rint(2, 3), larga: rint(4, 6) }[largo];
+  const tono = s >= 4 ? "Pos" : s === 3 ? "Mid" : "Neg";
+  const out = [];
+
+  if (largo === "corta" && chance(0.5)) return [R(COMUN.breves[s])];
+
+  if (largo !== "corta" && chance(0.55)) out.push(R(COMUN["apertura" + tono]));
+
+  let pool;
+  if (s >= 4) pool = [ctx.pos, ctx.pos, COMUN.servicioPos, COMUN.precioPos, COMUN.esperaPos, ctx.lugar.slice(0, 1)];
+  else if (s === 3) pool = [ctx.mid, ctx.mid, COMUN.servicioPos, COMUN.precioNeg, COMUN.esperaNeg, ctx.lugar];
+  else pool = [ctx.neg, ctx.neg, COMUN.servicioNeg, COMUN.precioNeg, COMUN.esperaNeg, ctx.lugar.slice(-1)];
+
+  shuffle(pool).slice(0, n).forEach(p => out.push(fill(R(p), ctx)));
+
+  if (s === 4 && chance(0.5)) out.push(fill(R(COMUN.peroMenor), ctx));
+  if (s === 2 && chance(0.5)) out.push(fill(R(COMUN.aunqueBueno), ctx));
+  if (s <= 2 && chance(0.25)) out.push(fill(R(ctx.neg), ctx));
+
+  if (largo !== "corta" && chance(0.6)) out.push(R(COMUN["cierre" + tono]));
+  return out;
+}
+
+function unir(partes) {
+  // a veces se encadenan con comas o "y", como escribe la gente
+  let txt = "";
+  partes.forEach((p, i) => {
+    p = p.trim();
+    if (i === 0) { txt = cap(p); return; }
+    const prevCierra = /[.!?]$/.test(txt);
+    const conector = /^(le quito|lo único|como pega|eso sí|salvo)/i.test(p);
+    if (!prevCierra && !conector && chance(0.35)) txt += R([", ", ", y ", " y además "]) + p.charAt(0).toLowerCase() + p.slice(1);
+    else txt += (prevCierra ? " " : ". ") + cap(p);
+  });
+  if (!/[.!?]$/.test(txt)) txt += ".";
+  return txt;
+}
+
+const TILDES = { "á": "a", "é": "e", "í": "i", "ó": "o", "ú": "u" };
+function humanizar(txt, nivel, s, ctx) {
+  if (nivel === 0) return txt;
+  const pQuitaTilde = nivel === 2 ? 0.55 : 0.12;
+  txt = txt.replace(/\S+/g, w => /[áéíóú]/.test(w) && chance(pQuitaTilde) ? w.replace(/[áéíóú]/g, c => TILDES[c]) : w);
+
+  if (chance(nivel === 2 ? 0.25 : 0.12)) txt = txt.replace(/\. (?=\S)/, "... ");
+  if (s >= 4 && chance(0.3)) txt = txt.replace(/[.!]$/, R(["!!", "!!!", "!"]));
+  if (s <= 2 && chance(0.2)) txt = txt.replace(/\.$/, "!!");
+
+  if (nivel === 2) {
+    txt = txt.replace(/\bporque\b/gi, () => chance(0.7) ? "xq" : "porque")
+             .replace(/\bque\b/g, () => chance(0.4) ? "q" : "que")
+             .replace(/\btambién\b|\btambien\b/g, () => chance(0.6) ? "tb" : "tambien")
+             .replace(/\bpor favor\b/g, "porfa");
+    if (chance(0.5)) txt = txt.charAt(0).toLowerCase() + txt.slice(1);
+    if (chance(0.4)) txt = txt.replace(/[.]$/, "");
+  } else if (chance(0.12)) {
+    txt = txt.charAt(0).toLowerCase() + txt.slice(1);
+  }
+
+  const pEmoji = nivel === 2 ? 0.5 : 0.22;
+  if (chance(pEmoji)) {
+    const e = s >= 4 ? R(COMUN.emojiPos.concat(ctx.emoji)) : s <= 2 ? R(COMUN.emojiNeg) : null;
+    if (e) txt += " " + e + (chance(0.3) ? e : "");
+  }
+  if (s >= 4 && nivel === 2 && chance(0.15)) txt += " jajaja";
+  return txt;
+}
+
+function generar() {
+  const tipo = document.getElementById("tipo").value;
+  const base = NEGOCIOS[tipo];
+  const extras = document.getElementById("extras").value.split(",").map(x => x.trim()).filter(Boolean);
+  const ctx = { ...base, nombre: document.getElementById("nombre").value.trim() || "el sitio", items: extras.length ? extras.concat(base.items.slice(0, 2)) : base.items };
+  const total = Math.max(1, Math.min(200, +document.getElementById("cantidad").value || 10));
+  const modo = document.getElementById("estrellas").value;
+  const largoSel = document.getElementById("largo").value;
+  const nivel = +document.getElementById("estilo").value;
+
+  const lista = [];
+  for (let i = 0; i < total; i++) {
+    const s = estrellas(modo);
+    const largo = largoSel === "mix" ? R(["corta", "corta", "media", "media", "media", "larga"]) : largoSel;
+    const texto = humanizar(unir(frases(s, ctx, largo)), nivel, s, ctx);
+    lista.push({ autor: autor(), estrellas: s, fecha: fecha(), texto });
+  }
+  window.__resenas = lista;
+  pintar(lista);
+}
+
+function pintar(lista) {
+  const media = (lista.reduce((a, r) => a + r.estrellas, 0) / lista.length).toFixed(1);
+  document.getElementById("stats").textContent = `${lista.length} reseñas · media ${media} ★`;
+  const el = document.getElementById("list");
+  el.innerHTML = "";
+  lista.forEach(r => {
+    const d = document.createElement("div");
+    d.className = "rev";
+    const av = document.createElement("div");
+    av.className = "av"; av.style.background = R(COLORES); av.textContent = r.autor.charAt(0).toUpperCase();
+    const head = document.createElement("div"); head.className = "head";
+    const info = document.createElement("div");
+    info.innerHTML = `<div class="name"></div><div class="meta"></div>`;
+    info.querySelector(".name").textContent = r.autor;
+    info.querySelector(".meta").textContent = r.fecha;
+    head.append(av, info);
+    const st = document.createElement("div"); st.className = "stars";
+    st.innerHTML = "★".repeat(r.estrellas) + `<span class="off">${"★".repeat(5 - r.estrellas)}</span>`;
+    const tx = document.createElement("div"); tx.className = "txt"; tx.textContent = r.texto;
+    d.append(head, st, tx);
+    el.append(d);
+  });
+}
+
+function descargar(nombre, contenido, tipo) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([contenido], { type: tipo }));
+  a.download = nombre; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ---------- init ----------
+const sel = document.getElementById("tipo");
+Object.entries(NEGOCIOS).forEach(([k, v]) => sel.add(new Option(v.label, k)));
+document.getElementById("gen").onclick = generar;
+document.getElementById("copiar").onclick = () => {
+  const t = (window.__resenas || []).map(r => `${r.autor} · ${"★".repeat(r.estrellas)} · ${r.fecha}\n${r.texto}`).join("\n\n");
+  navigator.clipboard.writeText(t);
+};
+document.getElementById("json").onclick = () => descargar("resenas.json", JSON.stringify(window.__resenas || [], null, 2), "application/json");
+document.getElementById("csv").onclick = () => {
+  const esc = v => `"${String(v).replace(/"/g, '""')}"`;
+  const filas = [["autor", "estrellas", "fecha", "texto"]].concat((window.__resenas || []).map(r => [r.autor, r.estrellas, r.fecha, r.texto]));
+  descargar("resenas.csv", "﻿" + filas.map(f => f.map(esc).join(",")).join("\n"), "text/csv");
+};
+generar();
+</script>
+</body>
+</html>
