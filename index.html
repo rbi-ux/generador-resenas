@@ -112,12 +112,16 @@ h2{font-size:15px;margin:0}
       </div>
     </div>
     <div class="full ia" id="iaBox" hidden>
-      <label>PDF con el contexto del negocio ficticio (carta, equipo, ubicación, historia...)
-        <input id="pdf" type="file" accept="application/pdf">
-      </label>
-      <label style="margin-top:10px">Clave de API de Anthropic
+      <label>Clave de API de Anthropic
         <input id="apikey" type="password" placeholder="sk-ant-..." autocomplete="off">
       </label>
+      <label style="margin-top:10px">PDF con el contexto del negocio ficticio (carta, equipo, ubicación, historia...)
+        <input id="pdf" type="file" accept="application/pdf">
+      </label>
+      <div class="row" style="margin-top:8px;align-items:center">
+        <button id="temasPdf">Sacar temas del PDF</button>
+        <span class="hint" id="temasEstado" style="margin:0">Al subir el PDF se añaden solos los temas que salgan en él.</span>
+      </div>
       <p class="hint">La clave solo se usa en esta pestaña para llamar a Claude. No se guarda ni se envía a ningún otro sitio; al cerrar la pestaña desaparece. Máximo 40 reseñas por tanda.</p>
     </div>
   </div>
@@ -520,6 +524,53 @@ ${plan.join("\n")}`;
   }
 }
 
+async function temasDelPdf() {
+  const estado = document.getElementById("temasEstado");
+  const btn = document.getElementById("temasPdf");
+  const key = document.getElementById("apikey").value.trim();
+  const file = document.getElementById("pdf").files[0];
+  if (!key) { estado.textContent = "Pon primero la clave de API."; return; }
+  if (!file) { estado.textContent = "Sube primero un PDF."; return; }
+  if (file.size > 30 * 1024 * 1024) { estado.textContent = "El PDF pesa demasiado (máximo 30 MB)."; return; }
+
+  btn.disabled = true; estado.textContent = "Leyendo el PDF...";
+  try {
+    const { default: Anthropic } = await import(SDK_URL);
+    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+    const res = await client.beta.messages.create({
+      model: "claude-opus-5-5",
+      max_tokens: 4000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: {
+        effort: "low",
+        format: {
+          type: "json_schema",
+          schema: { type: "object", properties: { temas: { type: "array", items: { type: "string" } } }, required: ["temas"], additionalProperties: false }
+        }
+      },
+      messages: [{
+        role: "user",
+        content: [
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: await aBase64(file) } },
+          { type: "text", text: `Este documento describe un negocio ficticio para una clase. Lista de 4 a 10 temas concretos sobre los que un cliente opinaría en una reseña, sacados del documento: platos o productos estrella, servicios, espacios, personas del equipo, horarios, ubicación... Cada tema en 2-6 palabras, en minúscula salvo nombres propios (ej: "el arroz negro", "la terraza", "Marta, la encargada"). No incluyas estos, que ya están: ${ATRIBUTOS.map(a => a.label).join(", ")}.` }
+        ]
+      }]
+    });
+    if (res.stop_reason === "refusal") throw new Error("Claude no ha podido leer este PDF.");
+    const texto = res.content.filter(b => b.type === "text").map(b => b.text).join("");
+    const existentes = new Set(ATRIBUTOS.map(a => a.label.toLowerCase()));
+    const nuevos = JSON.parse(texto).temas.map(t => t.trim()).filter(t => t && !existentes.has(t.toLowerCase()));
+    nuevos.forEach((t, i) => ATRIBUTOS.push({ id: "pdf" + Date.now() + i, label: t, on: true }));
+    pintarAttrs();
+    estado.textContent = nuevos.length ? `Añadidos ${nuevos.length} temas del PDF. Desmarca los que no quieras.` : "No he encontrado temas nuevos en el PDF.";
+  } catch (e) {
+    estado.textContent = e && e.status === 401 ? "La clave de API no es válida." : "Error: " + (e && e.message ? e.message : e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function pintarAttrs() {
   const box = document.getElementById("attrs");
   box.innerHTML = "";
@@ -578,6 +629,8 @@ document.getElementById("addAttr").onclick = () => {
   inp.value = "";
   pintarAttrs();
 };
+document.getElementById("temasPdf").onclick = temasDelPdf;
+document.getElementById("pdf").onchange = () => { if (document.getElementById("apikey").value.trim()) temasDelPdf(); };
 document.getElementById("nuevoAttr").onkeydown = e => { if (e.key === "Enter") document.getElementById("addAttr").click(); };
 document.querySelectorAll('input[name="motor"]').forEach(r => r.onchange = () => {
   document.getElementById("iaBox").hidden = document.querySelector('input[name="motor"]:checked').value !== "ia";
