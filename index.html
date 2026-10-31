@@ -38,6 +38,18 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
 .stars{color:var(--star);letter-spacing:1px;margin:6px 0 4px}
 .stars .off{color:var(--line)}
 .txt{white-space:pre-wrap;word-wrap:break-word}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;flex-direction:row;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:6px 12px;color:var(--ink);font-size:14px;cursor:pointer}
+.chip input{margin:0;padding:0}
+.row{display:flex;gap:8px}
+.row input{flex:1;min-width:0}
+.modo{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}
+.modo label{flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:14px}
+.hint{font-size:12px;color:var(--muted);margin:4px 0 8px}
+.err{color:#c2553d;font-size:14px;margin-bottom:10px;white-space:pre-wrap}
+.ia[hidden]{display:none}
+button:disabled{opacity:.6;cursor:wait}
+h2{font-size:15px;margin:0}
 .foot{margin-top:28px;color:var(--muted);font-size:12px}
 </style>
 </head>
@@ -83,6 +95,31 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
     <label class="full">Cosas concretas a mencionar (opcional, separadas por comas)
       <input id="extras" placeholder="ej: el arroz negro, la terraza, el parking">
     </label>
+    <div class="full">
+      <h2>¿De qué hablan las reseñas?</h2>
+      <p class="hint">Cada reseña toca uno o varios de los temas marcados.</p>
+      <div class="chips" id="attrs"></div>
+      <div class="row" style="margin-top:8px">
+        <input id="nuevoAttr" placeholder="Añadir otro tema (ej: el wifi, la carta de vinos)">
+        <button id="addAttr">Añadir</button>
+      </div>
+    </div>
+    <div class="full">
+      <h2>Motor</h2>
+      <div class="modo">
+        <label><input type="radio" name="motor" value="plantillas" checked> Rápido (sin IA, gratis)</label>
+        <label><input type="radio" name="motor" value="ia"> Con IA + PDF (más natural)</label>
+      </div>
+    </div>
+    <div class="full ia" id="iaBox" hidden>
+      <label>PDF con el contexto del negocio ficticio (carta, equipo, ubicación, historia...)
+        <input id="pdf" type="file" accept="application/pdf">
+      </label>
+      <label style="margin-top:10px">Clave de API de Anthropic
+        <input id="apikey" type="password" placeholder="sk-ant-..." autocomplete="off">
+      </label>
+      <p class="hint">La clave solo se usa en esta pestaña para llamar a Claude. No se guarda ni se envía a ningún otro sitio; al cerrar la pestaña desaparece. Máximo 40 reseñas por tanda.</p>
+    </div>
   </div>
 
   <div class="actions">
@@ -91,6 +128,7 @@ button.primary{background:var(--accent);color:var(--accent-ink);border-color:var
     <button id="json">Descargar JSON</button>
     <button id="csv">Descargar CSV</button>
   </div>
+  <div class="err" id="err"></div>
   <div class="stats" id="stats"></div>
   <div class="list" id="list"></div>
   <p class="foot">Contenido ficticio generado en tu navegador. Solo para demos internas, no para publicar.</p>
@@ -209,6 +247,37 @@ const COMUN = {
   emojiNeg: ["😡", "👎", "🙄", "😤"]
 };
 
+const ATRIBUTOS = [
+  { id: "personal", label: "Atención del personal", on: true },
+  { id: "producto", label: "Comida / producto", on: true },
+  { id: "ubicacion", label: "Ubicación", on: true },
+  { id: "precio", label: "Precio" },
+  { id: "rapidez", label: "Rapidez / esperas" },
+  { id: "ambiente", label: "Ambiente" },
+  { id: "limpieza", label: "Limpieza" }
+];
+const FRASES_ATTR = {
+  ubicacion: { Pos: ["está muy bien ubicado, en pleno centro", "fácil de llegar y con parking cerca", "la zona es una maravilla para pasear después"], Neg: ["cuesta muchísimo aparcar por la zona", "está un poco escondido, dimos dos vueltas hasta encontrarlo", "la zona de noche no me dio mucha confianza"] },
+  ambiente: { Pos: ["el ambiente muy agradable", "música tranquila y buen rollo", "se está a gusto, sin agobios"], Neg: ["había un ruido que no se podía ni hablar", "el ambiente bastante frío", "la música altísima"] },
+  limpieza: { Pos: ["todo limpísimo", "se nota que cuidan la limpieza", "los baños impecables, que ya es decir"], Neg: ["los baños daban pena", "las mesas pegajosas", "bastante dejado en cuanto a limpieza"] },
+  custom: { Pos: ["{attr}, de diez", "lo de {attr} me encantó", "{attr} muy bien, la verdad"], Neg: ["{attr} muy mejorable", "lo de {attr} un desastre", "con {attr} nos llevamos un chasco"], Mid: ["{attr} correcto, sin más", "{attr} bien aunque podría mejorar"] }
+};
+
+function listaAttr(a, tono, ctx) {
+  const T = tono === "Mid" ? (chance(0.5) ? "Pos" : "Neg") : tono;
+  switch (a.id) {
+    case "personal": return COMUN["servicio" + T];
+    case "producto": return tono === "Mid" && chance(0.6) ? ctx.mid : ctx[T.toLowerCase()];
+    case "precio": return COMUN["precio" + T];
+    case "rapidez": return COMUN["espera" + T];
+    case "ubicacion": case "ambiente": case "limpieza": return FRASES_ATTR[a.id][T];
+    default: {
+      const k = tono === "Mid" && chance(0.6) ? "Mid" : T;
+      return FRASES_ATTR.custom[k].map(f => f.replace("{attr}", a.label.toLowerCase()));
+    }
+  }
+}
+
 const NOMBRES = ["María", "Laura", "Carmen", "Lucía", "Marta", "Ana", "Cristina", "Paula", "Elena", "Sara", "Núria", "Mari Carmen", "Rocío", "Montse", "Javier", "David", "Carlos", "Jordi", "Sergio", "Pablo", "Álvaro", "Manuel", "Antonio", "Pedro", "Rubén", "Iker", "Xavi", "Marc", "Fernando", "José Luis"];
 const APELLIDOS = ["García", "Martínez", "López", "Sánchez", "Pérez", "Gómez", "Fernández", "Ruiz", "Díaz", "Moreno", "Muñoz", "Romero", "Navarro", "Torres", "Puig", "Ferrer", "Vidal", "Castro", "Ortega", "Rubio"];
 const COLORES = ["#c2553d", "#3d7cc2", "#4f9a5e", "#8a5cc2", "#c28a3d", "#3da6a6", "#b8457d", "#5a6b7d"];
@@ -245,7 +314,7 @@ function fecha() {
   return R(["hace un año", `hace ${rint(2, 4)} años`]);
 }
 
-function frases(s, ctx, largo) {
+function frases(s, ctx, largo, attrs) {
   const n = { corta: 1, media: rint(2, 3), larga: rint(4, 6) }[largo];
   const tono = s >= 4 ? "Pos" : s === 3 ? "Mid" : "Neg";
   const out = [];
@@ -254,16 +323,14 @@ function frases(s, ctx, largo) {
 
   if (largo !== "corta" && chance(0.55)) out.push(R(COMUN["apertura" + tono]));
 
-  let pool;
-  if (s >= 4) pool = [ctx.pos, ctx.pos, COMUN.servicioPos, COMUN.precioPos, COMUN.esperaPos, ctx.lugar.slice(0, 1)];
-  else if (s === 3) pool = [ctx.mid, ctx.mid, COMUN.servicioPos, COMUN.precioNeg, COMUN.esperaNeg, ctx.lugar];
-  else pool = [ctx.neg, ctx.neg, COMUN.servicioNeg, COMUN.precioNeg, COMUN.esperaNeg, ctx.lugar.slice(-1)];
+  const usados = shuffle(attrs).slice(0, n);
+  usados.forEach(a => out.push(fill(R(listaAttr(a, tono, ctx)), ctx)));
 
-  shuffle(pool).slice(0, n).forEach(p => out.push(fill(R(p), ctx)));
-
-  if (s === 4 && chance(0.5)) out.push(fill(R(COMUN.peroMenor), ctx));
-  if (s === 2 && chance(0.5)) out.push(fill(R(COMUN.aunqueBueno), ctx));
-  if (s <= 2 && chance(0.25)) out.push(fill(R(ctx.neg), ctx));
+  // la pega (o lo bueno) va sobre un tema distinto para no contradecirse
+  const libres = attrs.filter(a => !usados.includes(a));
+  const frase = t => fill(R(listaAttr(R(libres), t, ctx)), ctx);
+  if (libres.length && s === 4 && chance(0.5)) out.push(R(COMUN.peroMenor).replace("{neg}", frase("Neg")));
+  if (libres.length && s === 2 && chance(0.5)) out.push(R(COMUN.aunqueBueno).replace("{pos}", frase("Pos")));
 
   if (largo !== "corta" && chance(0.6)) out.push(R(COMUN["cierre" + tono]));
   return out;
@@ -315,6 +382,10 @@ function humanizar(txt, nivel, s, ctx) {
 }
 
 function generar() {
+  document.getElementById("err").textContent = "";
+  const attrs = ATRIBUTOS.filter(a => a.on);
+  if (!attrs.length) { document.getElementById("err").textContent = "Marca al menos un tema."; return; }
+  if (document.querySelector('input[name="motor"]:checked').value === "ia") return generarIA(attrs);
   const tipo = document.getElementById("tipo").value;
   const base = NEGOCIOS[tipo];
   const extras = document.getElementById("extras").value.split(",").map(x => x.trim()).filter(Boolean);
@@ -328,11 +399,139 @@ function generar() {
   for (let i = 0; i < total; i++) {
     const s = estrellas(modo);
     const largo = largoSel === "mix" ? R(["corta", "corta", "media", "media", "media", "larga"]) : largoSel;
-    const texto = humanizar(unir(frases(s, ctx, largo)), nivel, s, ctx);
+    const texto = humanizar(unir(frases(s, ctx, largo, attrs)), nivel, s, ctx);
     lista.push({ autor: autor(), estrellas: s, fecha: fecha(), texto });
   }
   window.__resenas = lista;
   pintar(lista);
+}
+
+const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.135.0/+esm";
+const ESTILOS = [
+  "escriben bien, con buena ortografía, aunque con tono de persona normal, nada de redacción de marketing",
+  "escriben como la gente normal: alguna tilde que falta, alguna coma de más, frases a medio terminar de vez en cuando",
+  "escriben desde el móvil: muchas veces sin tildes, abreviaturas tipo q, xq, tb, minúsculas al empezar, algún emoji, signos repetidos (!!)"
+];
+const LARGOS = { corta: "corta (de 2 a 12 palabras)", media: "media (2-4 frases)", larga: "larga (un párrafo o dos, contando la experiencia con detalle)" };
+
+const PROMPT_SISTEMA = `Eres un generador de datos de ejemplo para una clase sobre reseñas online. Escribes reseñas ficticias de un negocio ficticio, en español de España, que suenen exactamente como las que escribe la gente de verdad.
+
+Cómo escribe la gente real:
+- Cada autor es una persona distinta, con su motivo de visita (cena de cumpleaños, comida de trabajo, pasaba por la zona, va cada semana...), su edad y su manera de hablar. Que se note.
+- Cuentan detalles concretos y algo de contexto personal ("fuimos con mi suegra", "el martes al mediodía"), no hacen listas de virtudes.
+- No hablan de todos los temas: cada reseña toca uno, dos o como mucho tres de los temas indicados, y a veces algo que no tiene nada que ver.
+- Nada de lenguaje publicitario ni frases redondas tipo "una experiencia inolvidable" o "sin duda alguna". Nada de guiones largos.
+- Varía mucho la forma de empezar y de acabar. No repitas estructuras ni muletillas entre reseñas.
+- Las de 4 estrellas suelen tener una pega pequeña; las de 3, sentimientos mezclados; las de 1 y 2 suelen estar enfadadas o decepcionadas y a veces explican mucho y otras son secas.
+- Usa los datos del documento (nombres del equipo, platos o productos, calle, horarios...) solo cuando encajen de forma natural, como lo mencionaría un cliente.
+
+Nombres de autor variados y realistas: nombre y apellido, nombre e inicial, solo nombre, o algún alias tipo usuario. Fecha en formato relativo ("hace 3 semanas", "hace un año").`;
+
+async function aBase64(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+async function generarIA(attrs) {
+  const errEl = document.getElementById("err");
+  const btn = document.getElementById("gen");
+  const key = document.getElementById("apikey").value.trim();
+  if (!key) { errEl.textContent = "Pon la clave de API para usar el modo con IA."; return; }
+  const total = Math.max(1, Math.min(40, +document.getElementById("cantidad").value || 10));
+  const modo = document.getElementById("estrellas").value;
+  const largoSel = document.getElementById("largo").value;
+  const nivel = +document.getElementById("estilo").value;
+  const tipo = NEGOCIOS[document.getElementById("tipo").value].label;
+  const nombre = document.getElementById("nombre").value.trim() || "el negocio";
+  const extras = document.getElementById("extras").value.trim();
+  const file = document.getElementById("pdf").files[0];
+
+  const plan = [];
+  for (let i = 0; i < total; i++) {
+    const largo = largoSel === "mix" ? R(["corta", "corta", "media", "media", "media", "larga"]) : largoSel;
+    plan.push(`${i + 1}. ${estrellas(modo)} estrellas, ${LARGOS[largo]}`);
+  }
+
+  const peticion = `Negocio: ${nombre} (${tipo}).
+Temas sobre los que pueden hablar: ${attrs.map(a => a.label).join(", ")}.${extras ? `\nCosas concretas que pueden salir: ${extras}.` : ""}
+Cómo escriben los autores: ${ESTILOS[nivel]}.
+${file ? "El documento adjunto describe el negocio; úsalo como fuente de detalles." : "No hay documento: inventa detalles coherentes con el tipo de negocio."}
+
+Escribe exactamente ${total} reseñas, en este orden y con estas estrellas y largo:
+${plan.join("\n")}`;
+
+  btn.disabled = true; btn.textContent = "Generando...";
+  try {
+    const content = [];
+    if (file) {
+      if (file.size > 30 * 1024 * 1024) throw new Error("El PDF pesa demasiado (máximo 30 MB).");
+      content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: await aBase64(file) } });
+    }
+    content.push({ type: "text", text: peticion });
+
+    const { default: Anthropic } = await import(SDK_URL);
+    const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+    const res = await client.beta.messages.create({
+      model: "claude-opus-5-5",
+      max_tokens: 16000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: {
+        effort: "medium",
+        format: {
+          type: "json_schema",
+          schema: {
+            type: "object",
+            properties: {
+              resenas: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: { autor: { type: "string" }, estrellas: { type: "integer" }, fecha: { type: "string" }, texto: { type: "string" } },
+                  required: ["autor", "estrellas", "fecha", "texto"],
+                  additionalProperties: false
+                }
+              }
+            },
+            required: ["resenas"],
+            additionalProperties: false
+          }
+        }
+      },
+      system: PROMPT_SISTEMA,
+      messages: [{ role: "user", content }]
+    });
+
+    if (res.stop_reason === "refusal") throw new Error("Claude no ha querido generar estas reseñas. Prueba a cambiar el contexto.");
+    if (res.stop_reason === "max_tokens") throw new Error("La respuesta se ha cortado. Pide menos reseñas de golpe.");
+    const texto = res.content.filter(b => b.type === "text").map(b => b.text).join("");
+    const lista = JSON.parse(texto).resenas.map(r => ({ ...r, estrellas: Math.max(1, Math.min(5, Math.round(r.estrellas))) }));
+    window.__resenas = lista;
+    pintar(lista);
+  } catch (e) {
+    const status = e && e.status;
+    errEl.textContent = status === 401 ? "La clave de API no es válida."
+      : status === 429 ? "Demasiadas peticiones seguidas. Espera un poco y vuelve a probar."
+      : "Error: " + (e && e.message ? e.message : e);
+  } finally {
+    btn.disabled = false; btn.textContent = "Generar";
+  }
+}
+
+function pintarAttrs() {
+  const box = document.getElementById("attrs");
+  box.innerHTML = "";
+  ATRIBUTOS.forEach(a => {
+    const l = document.createElement("label");
+    l.className = "chip";
+    const c = document.createElement("input");
+    c.type = "checkbox"; c.checked = !!a.on;
+    c.onchange = () => { a.on = c.checked; };
+    l.append(c, document.createTextNode(a.label));
+    box.append(l);
+  });
 }
 
 function pintar(lista) {
@@ -370,6 +569,19 @@ function descargar(nombre, contenido, tipo) {
 const sel = document.getElementById("tipo");
 Object.entries(NEGOCIOS).forEach(([k, v]) => sel.add(new Option(v.label, k)));
 document.getElementById("gen").onclick = generar;
+pintarAttrs();
+document.getElementById("addAttr").onclick = () => {
+  const inp = document.getElementById("nuevoAttr");
+  const v = inp.value.trim();
+  if (!v) return;
+  ATRIBUTOS.push({ id: "c" + Date.now(), label: v, on: true });
+  inp.value = "";
+  pintarAttrs();
+};
+document.getElementById("nuevoAttr").onkeydown = e => { if (e.key === "Enter") document.getElementById("addAttr").click(); };
+document.querySelectorAll('input[name="motor"]').forEach(r => r.onchange = () => {
+  document.getElementById("iaBox").hidden = document.querySelector('input[name="motor"]:checked').value !== "ia";
+});
 document.getElementById("copiar").onclick = () => {
   const t = (window.__resenas || []).map(r => `${r.autor} · ${"★".repeat(r.estrellas)} · ${r.fecha}\n${r.texto}`).join("\n\n");
   navigator.clipboard.writeText(t);
